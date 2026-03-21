@@ -231,7 +231,7 @@ You should have:
 ### 2. Clone the repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/ThisWasAryan/MedClear.git
 cd MedClear
 ```
 
