@@ -14,7 +14,8 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# Configure Groq
+# Configure AI provider
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "Groq").strip() or "Groq"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 _groq_client = None
 if GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
@@ -291,6 +292,9 @@ def status():
     return jsonify({
         "status": "running",
         "api_key_configured": key_configured,
+        "provider_name": LLM_PROVIDER,
+        "api_key_env_var": "GROQ_API_KEY",
+        "api_key_placeholder": "your_groq_api_key_here",
         "version": "1.0.0"
     })
 
@@ -303,7 +307,7 @@ if __name__ == "__main__":
         print("  WARNING: GROQ_API_KEY not set in .env file")
         print("  Set your key in .env before using the analysis feature")
     else:
-        print("  OK: Groq API key loaded")
+        print(f"  OK: {LLM_PROVIDER} API key loaded")
     print("  Open: http://127.0.0.1:5000")
     print("=" * 60)
     app.run(debug=True, host="0.0.0.0", port=5000)

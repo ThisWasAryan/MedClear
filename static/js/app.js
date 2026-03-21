@@ -2,6 +2,8 @@
 let currentFile = null;
 let currentTab = 'file';
 let analysisResult = null;
+let providerName = 'Groq';
+let providerEnvVar = 'GROQ_API_KEY';
 
 // ─── Init ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,18 +19,37 @@ async function checkApiStatus() {
   try {
     const res  = await fetch('/api/status');
     const data = await res.json();
+    providerName = data.provider_name || providerName;
+    providerEnvVar = data.api_key_env_var || providerEnvVar;
+    updateProviderCopy(data);
+
     if (data.api_key_configured) {
       dot.classList.add('online');
-      text.textContent = 'Gemini Ready';
+      text.textContent = `${providerName} Ready`;
     } else {
       dot.classList.add('offline');
-      text.textContent = 'API Key Missing';
+      text.textContent = `${providerName} API Key Missing`;
       showApiAlert();
     }
   } catch {
     dot.classList.add('offline');
     text.textContent = 'Server Offline';
   }
+}
+
+
+function updateProviderCopy(status = {}) {
+  providerName = status.provider_name || providerName;
+  providerEnvVar = status.api_key_env_var || providerEnvVar;
+
+  const providerEls = ['providerName', 'providerAlertName'];
+  providerEls.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = providerName;
+  });
+
+  const envEl = document.getElementById('providerEnvVar');
+  if (envEl) envEl.textContent = providerEnvVar;
 }
 
 function showApiAlert() {
