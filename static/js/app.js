@@ -1,15 +1,22 @@
 let currentFile = null;
 let currentTab = 'file';
-let currentResultTab = 'findings';
 let analysisResult = null;
 let providerName = 'Groq';
 let providerEnvVar = 'GROQ_API_KEY';
+let currentModel = '—';
 
 const severityMap = {
   normal: ['severity-normal', 'Normal'],
   'mild concern': ['severity-mild', 'Mild concern'],
   'moderate concern': ['severity-moderate', 'Moderate concern'],
   'serious concern': ['severity-serious', 'Serious concern'],
+};
+
+const reportTypeMeta = {
+  lab_report: ['Lab report', 'Focused on test values, ranges, and urgency cues.'],
+  prescription: ['Prescription', 'Focused on medications, dosing details, and practical use instructions.'],
+  combined_report: ['Lab report + prescription', 'Shows both the full lab review and medication guidance together.'],
+  general_report: ['General medical review', 'Used when the document is mixed or does not fit a single report type clearly.'],
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -28,6 +35,7 @@ async function checkApiStatus() {
     const data = await res.json();
     providerName = data.provider_name || providerName;
     providerEnvVar = data.api_key_env_var || providerEnvVar;
+    currentModel = data.model || currentModel;
     updateProviderCopy(data);
 
     if (data.api_key_configured) {
@@ -47,9 +55,11 @@ async function checkApiStatus() {
 function updateProviderCopy(status = {}) {
   providerName = status.provider_name || providerName;
   providerEnvVar = status.api_key_env_var || providerEnvVar;
+  currentModel = status.model || currentModel;
   document.getElementById('providerName').textContent = providerName;
   document.getElementById('providerAlertName').textContent = providerName;
   document.getElementById('providerEnvVar').textContent = providerEnvVar;
+  document.getElementById('modelName').textContent = currentModel;
 }
 
 function showApiAlert() {
@@ -69,6 +79,7 @@ async function loadLanguages() {
       option.textContent = `${lang.name} (${lang.native})`;
       select.appendChild(option);
     });
+    select.value = 'hi';
   } catch {
     showError('Unable to load languages.');
   }
@@ -99,12 +110,6 @@ function switchTab(tab) {
   });
 }
 
-function switchResultTab(tab) {
-  currentResultTab = tab;
-  document.querySelectorAll('.report-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.reportTab === tab));
-  document.querySelectorAll('.report-panel').forEach(panel => panel.classList.toggle('active', panel.id === `result-${tab}`));
-}
-
 function handleDragOver(event) {
   event.preventDefault();
   document.getElementById('dropzone').classList.add('drag-over');
@@ -118,8 +123,7 @@ function handleDragLeave(event) {
 function handleDrop(event) {
   event.preventDefault();
   document.getElementById('dropzone').classList.remove('drag-over');
-  const files = event.dataTransfer.files;
-  if (files.length > 0) setFile(files[0]);
+  if (event.dataTransfer.files.length > 0) setFile(event.dataTransfer.files[0]);
 }
 
 function handleFileSelect(event) {
@@ -130,12 +134,10 @@ function setFile(file) {
   const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff', 'image/bmp'];
   const allowedExt = ['pdf', 'png', 'jpg', 'jpeg', 'tiff', 'tif', 'bmp'];
   const ext = file.name.split('.').pop().toLowerCase();
-
   if (!allowed.includes(file.type) && !allowedExt.includes(ext)) {
     showError(`Unsupported file type: .${ext}. Please upload a PDF or image.`);
     return;
   }
-
   currentFile = file;
   document.getElementById('fileName').textContent = file.name;
   document.getElementById('fileSize').textContent = formatBytes(file.size);
@@ -210,13 +212,16 @@ function renderResults(data) {
   document.getElementById('assessmentText').textContent = data.overall_assessment || '—';
   document.getElementById('summaryText').textContent = data.summary || '—';
   document.getElementById('disclaimerText').textContent = data.disclaimer || '';
+  document.getElementById('modelName').textContent = data.model || currentModel;
 
   const [severityClass, severityLabel] = severityMap[(data.severity || '').toLowerCase()] || ['severity-na', data.severity || 'N/A'];
   const severityBadge = document.getElementById('severityBadge');
   severityBadge.className = `severity-badge ${severityClass}`;
   severityBadge.textContent = severityLabel;
 
+  renderReportType(data.report_type || 'general_report');
   renderPatientCard(data.patient || {});
+  renderLabResults(data.lab_results || []);
   renderFindings(data.findings || []);
   renderMedications(data.medications || []);
   renderLifestyle(data.lifestyle_changes || []);
@@ -225,8 +230,19 @@ function renderResults(data) {
 
   document.getElementById('resultsSection').style.display = 'grid';
   document.getElementById('followupResponse').style.display = 'none';
-  switchResultTab(currentResultTab);
   document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderReportType(reportType) {
+  const [title, description] = reportTypeMeta[reportType] || reportTypeMeta.general_report;
+  document.getElementById('reportTypeBadge').textContent = title;
+  document.getElementById('reportModeTitle').textContent = title;
+  document.getElementById('reportModeDescription').textContent = description;
+
+  const showLab = ['lab_report', 'combined_report', 'general_report'].includes(reportType);
+  const showRx = ['prescription', 'combined_report', 'general_report'].includes(reportType);
+  document.getElementById('labInterface').style.display = showLab ? 'block' : 'none';
+  document.getElementById('prescriptionInterface').style.display = showRx ? 'block' : 'none';
 }
 
 function renderPatientCard(patient) {
@@ -249,6 +265,29 @@ function renderPatientCard(patient) {
   document.getElementById('patientCard').style.display = rows.length ? 'block' : 'none';
 }
 
+function renderLabResults(results) {
+  const table = document.getElementById('labResultsTable');
+  table.innerHTML = '';
+
+  if (!results.length) {
+    table.innerHTML = '<tr><td colspan="5" class="empty-cell">No lab values were identified in this report.</td></tr>';
+    return;
+  }
+
+  results.forEach(item => {
+    const row = document.createElement('tr');
+    const valueText = [item.value, item.unit].filter(Boolean).join(' ');
+    row.innerHTML = `
+      <td data-label="Test"><div class="cell-title">${escapeHtml(item.test_name || '—')}</div><div class="cell-subtitle">${escapeHtml(item.category || 'Other')}</div></td>
+      <td data-label="Value">${escapeHtml(valueText || '—')}</td>
+      <td data-label="Range">${escapeHtml(item.normal_range || '—')}</td>
+      <td data-label="Status"><span class="status-pill ${statusClass(item.status)} urgency-${sanitizeUrgency(item.urgency)}">${escapeHtml(item.status || 'N/A')}</span></td>
+      <td data-label="Explanation"><div class="wrap-text">${escapeHtml(item.explanation || '—')}</div>${item.recommended_follow_up ? `<div class="table-followup">${escapeHtml(item.recommended_follow_up)}</div>` : ''}</td>
+    `;
+    table.appendChild(row);
+  });
+}
+
 function renderFindings(findings) {
   const container = document.getElementById('findingsList');
   container.innerHTML = '';
@@ -259,17 +298,14 @@ function renderFindings(findings) {
 
   findings.forEach(finding => {
     const item = document.createElement('article');
-    item.className = 'stack-card';
-    const chips = [finding.category, finding.status].filter(Boolean).map(value => `<span class="chip">${escapeHtml(value)}</span>`).join('');
-    const values = [finding.value ? `Value: ${escapeHtml(finding.value)}` : '', finding.normal_range ? `Normal: ${escapeHtml(finding.normal_range)}` : ''].filter(Boolean).join(' · ');
+    item.className = `finding-row ${statusClass(finding.status)}`;
     item.innerHTML = `
-      <div class="stack-head">
-        <h4>${escapeHtml(finding.title || 'Finding')}</h4>
-        <div class="chip-row">${chips}</div>
+      <div class="finding-row-top">
+        <h5>${escapeHtml(finding.title || 'Finding')}</h5>
+        <span class="status-pill ${statusClass(finding.status)}">${escapeHtml(finding.status || 'N/A')}</span>
       </div>
-      ${values ? `<p class="meta-line">${values}</p>` : ''}
-      <p>${escapeHtml(finding.why_it_matters || '—')}</p>
-      ${finding.recommended_follow_up ? `<p class="follow-line"><strong>Follow-up:</strong> ${escapeHtml(finding.recommended_follow_up)}</p>` : ''}
+      <p class="wrap-text">${escapeHtml(finding.why_it_matters || '—')}</p>
+      ${finding.recommended_follow_up ? `<p class="table-followup">${escapeHtml(finding.recommended_follow_up)}</p>` : ''}
     `;
     container.appendChild(item);
   });
@@ -285,12 +321,14 @@ function renderMedications(medications) {
 
   medications.forEach(med => {
     const item = document.createElement('article');
-    item.className = 'stack-card';
+    item.className = 'med-card';
     item.innerHTML = `
-      <div class="stack-head"><h4>${escapeHtml(med.name || 'Medication')}</h4></div>
-      ${med.purpose ? `<p><strong>Purpose:</strong> ${escapeHtml(med.purpose)}</p>` : ''}
-      ${med.details ? `<p><strong>Details:</strong> ${escapeHtml(med.details)}</p>` : ''}
-      ${med.patient_note ? `<p><strong>Patient note:</strong> ${escapeHtml(med.patient_note)}</p>` : ''}
+      <div class="med-header">
+        <h5>${escapeHtml(med.name || 'Medication')}</h5>
+      </div>
+      ${med.purpose ? `<p><strong>Purpose:</strong> <span class="wrap-text">${escapeHtml(med.purpose)}</span></p>` : ''}
+      ${med.details ? `<p><strong>Details:</strong> <span class="wrap-text">${escapeHtml(med.details)}</span></p>` : ''}
+      ${med.patient_note ? `<p><strong>Patient note:</strong> <span class="wrap-text">${escapeHtml(med.patient_note)}</span></p>` : ''}
     `;
     container.appendChild(item);
   });
@@ -314,7 +352,7 @@ function renderSuggestions(items) {
   const list = document.getElementById('suggestionList');
   list.innerHTML = '';
   if (!items.length) {
-    list.innerHTML = '<li>You can ask for help understanding a specific result, medication, or next step.</li>';
+    list.innerHTML = '<li>You can ask about a specific test, medicine, or next medical step.</li>';
     return;
   }
   items.forEach(item => {
@@ -331,24 +369,28 @@ function renderTranslation(translatedReport, languageName) {
     return;
   }
 
-  const lines = [];
-  if (translatedReport.overall_assessment) lines.push(`<p>${escapeHtml(translatedReport.overall_assessment)}</p>`);
+  const sections = [];
+  if (translatedReport.overall_assessment) sections.push(`<p>${escapeHtml(translatedReport.overall_assessment)}</p>`);
+  if (translatedReport.summary) sections.push(`<p><strong>Summary:</strong> ${escapeHtml(translatedReport.summary)}</p>`);
   if (translatedReport.findings?.length) {
-    lines.push('<h5>Findings</h5>');
-    translatedReport.findings.forEach(item => lines.push(`<p><strong>${escapeHtml(item.title || '')}</strong>: ${escapeHtml(item.why_it_matters || '')}</p>`));
+    sections.push('<h5>Findings</h5>');
+    sections.push(`<ul>${translatedReport.findings.map(item => `<li><strong>${escapeHtml(item.title || '')}</strong>: ${escapeHtml(item.why_it_matters || '')}</li>`).join('')}</ul>`);
+  }
+  if (translatedReport.lab_results?.length) {
+    sections.push('<h5>Lab results</h5>');
+    sections.push(`<ul>${translatedReport.lab_results.map(item => `<li><strong>${escapeHtml(item.test_name || '')}</strong>: ${escapeHtml(item.explanation || '')}</li>`).join('')}</ul>`);
   }
   if (translatedReport.medications?.length) {
-    lines.push('<h5>Medication</h5>');
-    translatedReport.medications.forEach(item => lines.push(`<p><strong>${escapeHtml(item.name || '')}</strong>: ${escapeHtml(item.patient_note || item.purpose || '')}</p>`));
+    sections.push('<h5>Medication</h5>');
+    sections.push(`<ul>${translatedReport.medications.map(item => `<li><strong>${escapeHtml(item.name || '')}</strong>: ${escapeHtml(item.patient_note || item.purpose || '')}</li>`).join('')}</ul>`);
   }
   if (translatedReport.lifestyle_changes?.length) {
-    lines.push('<h5>Lifestyle changes</h5>');
-    lines.push(`<ul>${translatedReport.lifestyle_changes.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
+    sections.push('<h5>Lifestyle changes</h5>');
+    sections.push(`<ul>${translatedReport.lifestyle_changes.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
   }
-  if (translatedReport.summary) lines.push(`<h5>Summary</h5><p>${escapeHtml(translatedReport.summary)}</p>`);
 
   document.getElementById('translationTitle').textContent = `Translated report (${languageName})`;
-  document.getElementById('translationText').innerHTML = lines.join('');
+  document.getElementById('translationText').innerHTML = sections.join('');
   block.style.display = 'block';
 }
 
@@ -373,14 +415,22 @@ async function askFollowUp() {
       body: JSON.stringify({
         question,
         analysis: analysisResult,
-        language_code: analysisResult.language_code || 'en',
         language_name: analysisResult.languageName || analysisResult.language_name || 'English',
       }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Follow-up failed.');
 
-    document.getElementById('followupAnswer').textContent = data.answer || '—';
+    document.getElementById('followupAnswerEnglish').textContent = data.answer_english || '—';
+    const translationSection = document.getElementById('followupTranslationSection');
+    if (data.answer_translated) {
+      document.getElementById('followupTranslationTitle').textContent = `Translated answer (${data.translated_language || analysisResult.languageName || 'Selected language'})`;
+      document.getElementById('followupAnswerTranslated').textContent = data.answer_translated;
+      translationSection.style.display = 'block';
+    } else {
+      translationSection.style.display = 'none';
+    }
+
     const list = document.getElementById('followupSuggestions');
     list.innerHTML = '';
     (data.suggested_questions || []).forEach(item => {
@@ -396,14 +446,9 @@ async function askFollowUp() {
   }
 }
 
-function copyResults() {
-  if (!analysisResult) return;
-  navigator.clipboard.writeText(buildPlainText(analysisResult));
-}
-
 function downloadResultsPdf() {
   if (!analysisResult) return;
-  const printWindow = window.open('', '_blank', 'width=900,height=1100');
+  const printWindow = window.open('', '_blank', 'width=980,height=1180');
   if (!printWindow) {
     showError('Popup blocked. Please allow popups to download the PDF.');
     return;
@@ -414,11 +459,17 @@ function downloadResultsPdf() {
       <head>
         <title>MedClear Evaluation</title>
         <style>
-          body { font-family: Inter, Arial, sans-serif; padding: 40px; color: #111827; line-height: 1.6; }
-          h1, h2, h3 { margin-bottom: 8px; }
-          .section { margin-top: 28px; }
-          .card { border: 1px solid #d1d5db; border-radius: 14px; padding: 16px; margin-top: 12px; }
-          ul { padding-left: 20px; }
+          body { font-family: Inter, Arial, sans-serif; padding: 34px; color: #0f172a; line-height: 1.55; }
+          h1, h2, h3, h4 { margin: 0 0 10px; }
+          .section { margin-top: 24px; }
+          .card { border: 1px solid #d6dde8; border-radius: 14px; padding: 14px 16px; margin-top: 10px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+          th, td { border: 1px solid #d6dde8; padding: 10px; text-align: left; vertical-align: top; }
+          .status { font-weight: 700; }
+          .high, .abnormal, .critical { color: #b91c1c; }
+          .low { color: #1d4ed8; }
+          .normal { color: #047857; }
+          ul { padding-left: 18px; }
         </style>
       </head>
       <body>
@@ -434,39 +485,34 @@ function downloadResultsPdf() {
 
 function buildPrintableHtml(data) {
   const patient = data.patient || {};
+  const translated = data.translated_report;
   return `
     <h1>MedClear Evaluation</h1>
     <p><strong>Patient:</strong> ${escapeHtml(patient.name || 'Not provided')}</p>
+    <p><strong>Report type:</strong> ${escapeHtml((reportTypeMeta[data.report_type] || reportTypeMeta.general_report)[0])}</p>
     <p><strong>Severity:</strong> ${escapeHtml(data.severity || 'N/A')}</p>
     <div class="section"><h2>Overall assessment</h2><div class="card">${escapeHtml(data.overall_assessment || '—')}</div></div>
-    <div class="section"><h2>Findings</h2>${(data.findings || []).map(item => `<div class="card"><h3>${escapeHtml(item.title || 'Finding')}</h3><p>${escapeHtml(item.why_it_matters || '—')}</p></div>`).join('') || '<p>No findings listed.</p>'}</div>
-    <div class="section"><h2>Medication</h2>${(data.medications || []).map(item => `<div class="card"><h3>${escapeHtml(item.name || 'Medication')}</h3><p>${escapeHtml(item.patient_note || item.purpose || '—')}</p></div>`).join('') || '<p>No medications listed.</p>'}</div>
+    <div class="section"><h2>Lab review</h2>
+      ${(data.lab_results || []).length ? `<table><thead><tr><th>Test</th><th>Value</th><th>Range</th><th>Status</th><th>Explanation</th></tr></thead><tbody>${data.lab_results.map(item => `<tr><td>${escapeHtml(item.test_name || '—')}</td><td>${escapeHtml([item.value, item.unit].filter(Boolean).join(' ') || '—')}</td><td>${escapeHtml(item.normal_range || '—')}</td><td class="status ${statusClass(item.status)}">${escapeHtml(item.status || 'N/A')}</td><td>${escapeHtml(item.explanation || '—')}</td></tr>`).join('')}</tbody></table>` : '<p>No lab values were identified in this report.</p>'}
+    </div>
+    <div class="section"><h2>Prescription review</h2>${(data.medications || []).map(item => `<div class="card"><h3>${escapeHtml(item.name || 'Medication')}</h3><p>${escapeHtml(item.patient_note || item.purpose || '—')}</p>${item.details ? `<p><strong>Details:</strong> ${escapeHtml(item.details)}</p>` : ''}</div>`).join('') || '<p>No medications were identified in this report.</p>'}</div>
+    <div class="section"><h2>Key findings</h2>${(data.findings || []).map(item => `<div class="card"><h3>${escapeHtml(item.title || 'Finding')}</h3><p>${escapeHtml(item.why_it_matters || '—')}</p></div>`).join('') || '<p>No key findings listed.</p>'}</div>
     <div class="section"><h2>Lifestyle changes</h2><ul>${(data.lifestyle_changes || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>
     <div class="section"><h2>Summary</h2><div class="card">${escapeHtml(data.summary || '—')}</div></div>
+    ${translated ? `<div class="section"><h2>Translated report (${escapeHtml(data.languageName || data.language_name || 'Selected language')})</h2><div class="card">${buildTranslatedPrintableHtml(translated)}</div></div>` : ''}
     <div class="section"><p>${escapeHtml(data.disclaimer || '')}</p></div>
   `;
 }
 
-function buildPlainText(data) {
-  const patient = data.patient || {};
-  let out = `MedClear Evaluation\n====================\n`;
-  if (patient.name) out += `Patient: ${patient.name}\n`;
-  if (patient.age) out += `Age: ${patient.age}\n`;
-  if (patient.sex) out += `Sex: ${patient.sex}\n`;
-  out += `Severity: ${data.severity || 'N/A'}\n\nOverall Assessment\n------------------\n${data.overall_assessment || '—'}\n\nFindings\n--------\n`;
-  (data.findings || []).forEach(item => {
-    out += `• ${item.title || 'Finding'}\n  ${item.why_it_matters || ''}\n`;
-  });
-  out += `\nMedication\n----------\n`;
-  (data.medications || []).forEach(item => {
-    out += `• ${item.name || 'Medication'}: ${item.patient_note || item.purpose || ''}\n`;
-  });
-  out += `\nLifestyle changes\n-----------------\n`;
-  (data.lifestyle_changes || []).forEach(item => {
-    out += `• ${item}\n`;
-  });
-  out += `\nSummary\n-------\n${data.summary || '—'}\n\n${data.disclaimer || ''}`;
-  return out;
+function buildTranslatedPrintableHtml(translated) {
+  const chunks = [];
+  if (translated.overall_assessment) chunks.push(`<p>${escapeHtml(translated.overall_assessment)}</p>`);
+  if (translated.summary) chunks.push(`<p><strong>Summary:</strong> ${escapeHtml(translated.summary)}</p>`);
+  if (translated.findings?.length) chunks.push(`<h4>Findings</h4><ul>${translated.findings.map(item => `<li><strong>${escapeHtml(item.title || '')}</strong>: ${escapeHtml(item.why_it_matters || '')}</li>`).join('')}</ul>`);
+  if (translated.lab_results?.length) chunks.push(`<h4>Lab results</h4><ul>${translated.lab_results.map(item => `<li><strong>${escapeHtml(item.test_name || '')}</strong>: ${escapeHtml(item.explanation || '')}</li>`).join('')}</ul>`);
+  if (translated.medications?.length) chunks.push(`<h4>Medication</h4><ul>${translated.medications.map(item => `<li><strong>${escapeHtml(item.name || '')}</strong>: ${escapeHtml(item.patient_note || item.purpose || '')}</li>`).join('')}</ul>`);
+  if (translated.lifestyle_changes?.length) chunks.push(`<h4>Lifestyle changes</h4><ul>${translated.lifestyle_changes.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
+  return chunks.join('');
 }
 
 function setLoading(loading, mode) {
@@ -491,6 +537,21 @@ function showError(message) {
 
 function hideError() {
   document.getElementById('errorAlert').style.display = 'none';
+}
+
+function sanitizeUrgency(value) {
+  return String(value || 'n-a').toLowerCase().replace(/[^a-z]/g, '') || 'na';
+}
+
+function statusClass(status) {
+  const key = String(status || 'n/a').toLowerCase();
+  if (key.includes('critical')) return 'status-critical';
+  if (key.includes('high')) return 'status-high';
+  if (key.includes('low')) return 'status-low';
+  if (key.includes('abnormal') || key.includes('follow')) return 'status-abnormal';
+  if (key.includes('borderline')) return 'status-borderline';
+  if (key.includes('normal')) return 'status-normal';
+  return 'status-na';
 }
 
 function escapeHtml(value) {

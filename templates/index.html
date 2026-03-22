@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MedClear – Personal Medical Report Guide</title>
-  <meta name="description" content="Upload a medical report and receive a clean, patient-friendly evaluation with translated insights, personalized context, follow-up answers, and one-click PDF export." />
+  <title>MedClear – Clinical Report Review</title>
+  <meta name="description" content="Review prescriptions and lab reports with structured medical explanations, translated summaries, follow-up guidance, and one-click PDF export." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -16,29 +16,27 @@
       <div class="brand-lockup">
         <div class="brand-mark">M</div>
         <div>
-          <p class="eyebrow">Personal report clarity</p>
+          <p class="eyebrow">Clinical report review</p>
           <h1>MedClear</h1>
         </div>
       </div>
       <div class="topbar-actions">
         <div class="nav-badge" id="apiStatusBadge"><span class="badge-dot"></span><span class="badge-text">Checking provider...</span></div>
-        <button class="theme-toggle" id="themeToggle" type="button" onclick="toggleTheme()">
-          <span id="themeToggleLabel">Dark mode</span>
-        </button>
+        <button class="theme-toggle" id="themeToggle" type="button" onclick="toggleTheme()"><span id="themeToggleLabel">Dark mode</span></button>
       </div>
     </header>
 
     <main class="app-grid">
       <section class="hero-panel glass-panel">
         <div class="hero-copy">
-          <p class="eyebrow">Designed to feel like a modern health portal</p>
-          <h2>Understand reports without the “AI-looking” clutter.</h2>
-          <p class="hero-text">Get a polished evaluation with translated sections, personalized patient details when present, a clean tabbed summary, follow-up answers, and one-click PDF export.</p>
+          <p class="eyebrow">Trusted review workflow</p>
+          <h2>Understand lab reports and prescriptions with a cleaner, more clinical experience.</h2>
+          <p class="hero-text">Upload a report once and review structured findings, medication guidance, lifestyle recommendations, translated output, and bilingual follow-up answers in one place.</p>
         </div>
         <div class="hero-metrics">
-          <div><strong>20+</strong><span>Languages</span></div>
-          <div><strong>4</strong><span>Result tabs</span></div>
-          <div><strong>PDF</strong><span>One-click export</span></div>
+          <div><strong>Lab</strong><span>all detected tests</span></div>
+          <div><strong>Rx</strong><span>medication-specific review</span></div>
+          <div><strong>PDF</strong><span>download with translation</span></div>
         </div>
       </section>
 
@@ -46,14 +44,14 @@
         <div class="workspace-head">
           <div>
             <p class="eyebrow">Step 1</p>
-            <h3>Upload or paste the medical report</h3>
+            <h3>Upload or paste a medical report</h3>
           </div>
           <div class="provider-chip">Provider: <span id="providerName">Groq</span></div>
         </div>
 
         <div class="tab-group" role="tablist">
-          <button class="tab active" id="tab-file" onclick="switchTab('file')">File upload</button>
-          <button class="tab" id="tab-text" onclick="switchTab('text')">Paste text</button>
+          <button class="tab active" id="tab-file" type="button" onclick="switchTab('file')">File upload</button>
+          <button class="tab" id="tab-text" type="button" onclick="switchTab('text')">Paste text</button>
         </div>
 
         <div id="panel-file" class="tab-panel active">
@@ -63,16 +61,16 @@
             <p class="dropzone-sub">PDF, PNG, JPG, TIFF, BMP</p>
           </div>
           <div class="file-preview" id="filePreview" style="display:none">
-            <div>
+            <div class="file-meta-wrap">
               <strong id="fileName"></strong>
               <p id="fileSize"></p>
             </div>
-            <button class="ghost-btn" type="button" onclick="removeFile()">Remove</button>
+            <button class="text-btn" type="button" onclick="removeFile()">Remove</button>
           </div>
         </div>
 
         <div id="panel-text" class="tab-panel">
-          <textarea id="pasteText" class="text-input" rows="11" placeholder="Example:\nPatient Name: John Doe\nAge: 57\nDiagnosis: Type 2 diabetes\nHbA1c: 8.2%\nMedication: Metformin 500 mg twice daily"></textarea>
+          <textarea id="pasteText" class="text-input" rows="11" placeholder="Example:\nPatient Name: John Doe\nHbA1c: 8.2%\nHemoglobin: 12.4 g/dL\nMedication: Metformin 500 mg twice daily"></textarea>
         </div>
 
         <div class="settings-row">
@@ -90,26 +88,22 @@
         </button>
       </section>
 
-      <div class="api-alert" id="apiAlert" style="display:none">
-        <strong><span id="providerAlertName">Groq</span> API key not configured.</strong>
-        Set <code id="providerEnvVar">GROQ_API_KEY</code> in <code>.env</code> and restart the server.
-      </div>
-
+      <div class="api-alert" id="apiAlert" style="display:none"><strong><span id="providerAlertName">Groq</span> API key not configured.</strong> Set <code id="providerEnvVar">GROQ_API_KEY</code> in <code>.env</code> and restart the server.</div>
       <div class="error-alert" id="errorAlert" style="display:none"><span id="errorMessage"></span></div>
 
       <section class="results-shell" id="resultsSection" style="display:none">
         <article class="summary-hero glass-panel">
-          <div>
+          <div class="summary-main">
             <p class="eyebrow">Step 2</p>
-            <h3 id="patientHeading">Evaluation summary</h3>
+            <div class="summary-headline-row">
+              <h3 id="patientHeading">Evaluation summary</h3>
+              <span class="report-kind-badge" id="reportTypeBadge">General report</span>
+            </div>
             <p class="assessment-text" id="assessmentText"></p>
           </div>
           <div class="summary-side">
             <div class="severity-badge" id="severityBadge"></div>
-            <div class="summary-actions">
-              <button class="ghost-btn" id="copyBtn" type="button" onclick="copyResults()">Copy</button>
-              <button class="ghost-btn" type="button" onclick="downloadResultsPdf()">Download PDF</button>
-            </div>
+            <button class="download-btn" type="button" onclick="downloadResultsPdf()">Download PDF</button>
           </div>
         </article>
 
@@ -117,37 +111,77 @@
           <div class="patient-grid" id="patientGrid"></div>
         </article>
 
-        <article class="glass-panel report-tabs-shell">
-          <div class="report-tabs" role="tablist">
-            <button class="report-tab active" data-report-tab="findings" onclick="switchResultTab('findings')">Findings</button>
-            <button class="report-tab" data-report-tab="medications" onclick="switchResultTab('medications')">Medication</button>
-            <button class="report-tab" data-report-tab="lifestyle" onclick="switchResultTab('lifestyle')">Lifestyle changes</button>
-            <button class="report-tab" data-report-tab="summary" onclick="switchResultTab('summary')">Summary</button>
+        <article class="report-mode-panel glass-panel" id="reportModePanel">
+          <div class="mode-card" id="modeOverviewCard">
+            <span class="mode-label">Report mode</span>
+            <strong id="reportModeTitle">General medical review</strong>
+            <p id="reportModeDescription">The interface adapts to lab reports, prescriptions, or combined documents.</p>
           </div>
+          <div class="mode-card compact" id="modelInfoCard">
+            <span class="mode-label">Model</span>
+            <strong id="modelName">—</strong>
+          </div>
+        </article>
 
-          <div class="report-panel active" id="result-findings">
-            <div class="stack-list" id="findingsList"></div>
-          </div>
-          <div class="report-panel" id="result-medications">
+        <article class="result-layout glass-panel">
+          <section class="result-column result-column-wide" id="labInterface">
+            <div class="section-heading-row">
+              <h4>Lab review</h4>
+              <span class="section-note">All detected tests</span>
+            </div>
+            <div class="lab-table-wrap">
+              <table class="lab-table">
+                <thead>
+                  <tr>
+                    <th>Test</th>
+                    <th>Value</th>
+                    <th>Range</th>
+                    <th>Status</th>
+                    <th>Explanation</th>
+                  </tr>
+                </thead>
+                <tbody id="labResultsTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="result-column" id="prescriptionInterface">
+            <div class="section-heading-row">
+              <h4>Prescription review</h4>
+              <span class="section-note">Medication-specific guidance</span>
+            </div>
             <div class="stack-list" id="medicationsList"></div>
+          </section>
+        </article>
+
+        <article class="insights-panel glass-panel">
+          <div class="insights-grid">
+            <section class="insight-block">
+              <div class="section-heading-row"><h4>Key findings</h4></div>
+              <div class="stack-list" id="findingsList"></div>
+            </section>
+            <section class="insight-block">
+              <div class="section-heading-row"><h4>Lifestyle changes</h4></div>
+              <ul class="bullet-list" id="lifestyleList"></ul>
+            </section>
           </div>
-          <div class="report-panel" id="result-lifestyle">
-            <ul class="bullet-list" id="lifestyleList"></ul>
-          </div>
-          <div class="report-panel" id="result-summary">
-            <div class="summary-block">
-              <h4>Closing summary</h4>
+        </article>
+
+        <article class="summary-panel glass-panel">
+          <div class="summary-grid">
+            <section>
+              <div class="section-heading-row"><h4>Summary</h4></div>
               <p id="summaryText"></p>
-            </div>
-            <div class="summary-block" id="translationBlock" style="display:none">
-              <h4 id="translationTitle">Translated report</h4>
-              <div id="translationText"></div>
-            </div>
-            <div class="summary-block">
-              <h4>Questions you can ask next</h4>
-              <ul class="bullet-list" id="suggestionList"></ul>
-            </div>
+            </section>
+            <section id="translationBlock" style="display:none">
+              <div class="section-heading-row"><h4 id="translationTitle">Translated report</h4></div>
+              <div id="translationText" class="translated-content"></div>
+            </section>
           </div>
+          <section>
+            <div class="section-heading-row"><h4>Questions you can ask next</h4></div>
+            <ul class="bullet-list" id="suggestionList"></ul>
+          </section>
         </article>
 
         <article class="glass-panel followup-panel">
@@ -158,12 +192,22 @@
             </div>
           </div>
           <div class="followup-input-row">
-            <textarea id="followupInput" class="text-input small" rows="3" placeholder="Ask something like: Should I be worried about the high glucose reading?"></textarea>
+            <textarea id="followupInput" class="text-input small" rows="3" placeholder="Example: Should I be concerned about the abnormal sugar values?"></textarea>
             <button class="btn-analyze secondary" id="followupBtn" type="button" onclick="askFollowUp()">Ask AI</button>
           </div>
           <div class="followup-response" id="followupResponse" style="display:none">
-            <p id="followupAnswer"></p>
-            <ul class="bullet-list" id="followupSuggestions"></ul>
+            <section>
+              <div class="section-heading-row"><h4>Answer in English</h4></div>
+              <p id="followupAnswerEnglish"></p>
+            </section>
+            <section id="followupTranslationSection" style="display:none">
+              <div class="section-heading-row"><h4 id="followupTranslationTitle">Translated answer</h4></div>
+              <p id="followupAnswerTranslated"></p>
+            </section>
+            <section>
+              <div class="section-heading-row"><h4>Suggested follow-up questions</h4></div>
+              <ul class="bullet-list" id="followupSuggestions"></ul>
+            </section>
           </div>
         </article>
 
@@ -171,7 +215,7 @@
       </section>
     </main>
   </div>
-  <footer class="footer">MedClear © 2026 · Patient-friendly medical report guidance</footer>
+  <footer class="footer">MedClear © 2026 · Structured review for prescriptions and lab reports</footer>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
