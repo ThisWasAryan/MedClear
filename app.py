@@ -1,25 +1,21 @@
-import os
 import io
 import json
-import tempfile
+import os
 import re
-from pathlib import Path
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from dotenv import load_dotenv
-from groq import Groq
+import importlib
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# Configure AI provider
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "Groq").strip() or "Groq"
+LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile").strip() or "llama-3.3-70b-versatile"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 _groq_client = None
-if GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
-    _groq_client = Groq(api_key=GROQ_API_KEY)
 
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "tiff", "tif", "bmp"}
 
@@ -46,15 +42,26 @@ SUPPORTED_LANGUAGES = [
     {"code": "ko", "name": "Korean", "native": "한국어"},
 ]
 
+def get_groq_client():
+    global _groq_client
+    if _groq_client is not None:
+        return _groq_client
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        return None
+
+    groq_module = importlib.import_module("groq")
+    _groq_client = groq_module.Groq(api_key=GROQ_API_KEY)
+    return _groq_client
+
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def extract_text_from_pdf(file_bytes):
-    """Extract text from PDF using PyMuPDF."""
     try:
-        import fitz  # PyMuPDF
+        import fitz
+
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         text = ""
         for page in doc:
@@ -66,12 +73,10 @@ def extract_text_from_pdf(file_bytes):
 
 
 def extract_text_from_image(file_bytes, filename):
-    """Extract text from image using Pillow + pytesseract OCR."""
     try:
         import pytesseract
         from PIL import Image
 
-        # Try to find tesseract on Windows common paths
         tesseract_paths = [
             r"C:\Program Files\Tesseract-OCR\tesseract.exe",
             r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
@@ -82,8 +87,7 @@ def extract_text_from_image(file_bytes, filename):
                 break
 
         image = Image.open(io.BytesIO(file_bytes))
-        text = pytesseract.image_to_string(image)
-        return text.strip()
+        return pytesseract.image_to_string(image).strip()
     except ImportError:
         return "OCR not available. Please install Tesseract and pytesseract."
     except Exception as e:
@@ -91,113 +95,174 @@ def extract_text_from_image(file_bytes, filename):
 
 
 def extract_text(file_bytes, filename):
-    """Route text extraction based on file type."""
     ext = filename.rsplit(".", 1)[1].lower()
-    if ext == "pdf":
-        return extract_text_from_pdf(file_bytes)
-    else:
-        return extract_text_from_image(file_bytes, filename)
+    return extract_text_from_pdf(file_bytes) if ext == "pdf" else extract_text_from_image(file_bytes, filename)
 
 
 def build_analysis_prompt(medical_text, language_name, language_code):
-    """Build the prompt for medical report analysis."""
-    lang_instruction = ""
-    if language_code != "en":
-        lang_instruction = f"""
-5. **TRANSLATION**: After the JSON, provide the full patient-friendly summary translated into {language_name}. 
-   Start the translation with the exact marker: ===TRANSLATION===
-   Then provide the complete translated explanation in {language_name}.
-"""
-    else:
-        lang_instruction = """
-5. **TRANSLATION**: No translation needed since English is selected. Skip the ===TRANSLATION=== section.
-"""
+    translation_rule = (
+        f'Populate "translated_report" with a polished, natural {language_name} translation for every major section. '
+        if language_code != "en"
+        else 'Set "translated_report" to null because English is selected. '
+    )
 
-    return f"""You are a medical expert who helps patients understand their medical reports in simple, friendly language.
+    return f"""You are a meticulous clinician, lab interpreter, pharmacist-style medication explainer, and patient educator.
 
-Analyze the following medical report text and respond in EXACTLY this format:
+Turn the medical text into a polished, structured report for a patient-facing portal.
 
-First, provide a JSON object with this exact structure:
+Non-negotiable goals:
+1. Detect whether this is mainly a prescription, mainly a lab report, or a combined report containing both. Use report_type = prescription|lab_report|combined_report|general_report.
+2. Capture patient identity/details when present and use the patient's name naturally in the overview.
+3. Extract ALL report tests/results that appear in the text, not just the abnormal ones. If 22 tests are listed, the JSON must contain all 22 in lab_results unless the source text is unreadable.
+4. Preserve urgency cues by correctly labeling each test as Normal, High, Low, Abnormal, Critical, Borderline, or N/A.
+5. Keep the language warm, clear, and medically accurate. Never invent values or medications.
+6. If medications are listed, explain them clearly and separately from lab findings.
+7. Provide good translation quality in {language_name if language_code != 'en' else 'English'} that sounds natural and professional, not literal.
+
+Return ONLY valid JSON. No markdown fences.
+
+Use this exact JSON schema:
 {{
-  "overall_assessment": "A 2-3 sentence plain English summary of the overall health picture",
+  "report_type": "prescription|lab_report|combined_report|general_report",
+  "patient": {{
+    "name": "Patient name if present, else null",
+    "age": "Age if present, else null",
+    "sex": "Sex/gender if present, else null",
+    "report_date": "Relevant report date if present, else null",
+    "clinician": "Doctor/facility if present, else null"
+  }},
+  "overall_assessment": "2-4 sentence personalized overview",
   "severity": "Normal|Mild Concern|Moderate Concern|Serious Concern",
-  "key_terms": [
+  "lab_results": [
     {{
-      "term": "Medical term",
-      "simple_name": "Common name or short description",
-      "explanation": "Simple explanation a 12-year-old could understand",
-      "value": "The measured value if applicable, else null",
-      "normal_range": "Normal range if applicable, else null",
-      "status": "Normal|High|Low|Abnormal|N/A"
+      "test_name": "Name of test",
+      "category": "CBC|Liver|Kidney|Thyroid|Lipid|Sugar|Urine|Vitamin|Hormone|Imaging|Other",
+      "value": "Reported value if present, else null",
+      "unit": "Unit if present, else null",
+      "normal_range": "Range if present, else null",
+      "status": "Normal|High|Low|Abnormal|Critical|Borderline|N/A",
+      "urgency": "routine|attention|urgent|n/a",
+      "explanation": "Plain-language meaning",
+      "recommended_follow_up": "What to ask or do next"
     }}
   ],
-  "recommendations": ["Simple actionable recommendation 1", "Simple actionable recommendation 2"],
-  "disclaimer": "This is an AI-generated summary for educational purposes only. Always consult your doctor for medical advice."
+  "findings": [
+    {{
+      "title": "Key finding title",
+      "status": "Normal|High|Low|Abnormal|Critical|Needs Follow-up|N/A",
+      "why_it_matters": "Plain-language explanation",
+      "recommended_follow_up": "Simple next step"
+    }}
+  ],
+  "medications": [
+    {{
+      "name": "Medication name",
+      "purpose": "Likely purpose if supported by the report, else null",
+      "details": "Dose/frequency/instructions if present, else null",
+      "patient_note": "Short patient-friendly explanation"
+    }}
+  ],
+  "lifestyle_changes": ["Practical lifestyle suggestion"],
+  "summary": "Short closing summary",
+  "follow_up_suggestions": ["Question the patient can ask next"],
+  "disclaimer": "This AI-generated explanation is for education only and does not replace care from a licensed medical professional.",
+  "translated_report": {{
+    "overall_assessment": "Translated assessment",
+    "summary": "Translated summary",
+    "findings": [{{
+      "title": "Translated title",
+      "why_it_matters": "Translated explanation",
+      "recommended_follow_up": "Translated follow-up"
+    }}],
+    "lab_results": [{{
+      "test_name": "Translated or localized test name if appropriate",
+      "status": "Translated status",
+      "explanation": "Translated explanation",
+      "recommended_follow_up": "Translated follow-up"
+    }}],
+    "medications": [{{
+      "name": "Medication name",
+      "purpose": "Translated purpose",
+      "details": "Translated details",
+      "patient_note": "Translated note"
+    }}],
+    "lifestyle_changes": ["Translated lifestyle item"]
+  }}
 }}
 
-Rules for the JSON:
-- Extract ALL medical terms, lab values, medications, diagnoses, procedures mentioned
-- Use ONLY simple, everyday English in explanations - avoid jargon
-- Be warm, reassuring, and non-alarming in tone
-- If a value is abnormal, explain what that might mean in simple terms
-- Include at least 3 recommendations
-
-{lang_instruction}
+Rules:
+- Include every identifiable test/result in lab_results.
+- Use null instead of guessing missing values.
+- If the report is prescription-only, lab_results can be an empty list.
+- If the report is lab-only, medications can be an empty list.
+- Put the most clinically important abnormalities near the top of findings.
+- {translation_rule}
+- Keep the output concise but complete.
 
 MEDICAL REPORT TEXT:
 ---
 {medical_text}
----
+---"""
 
-Remember: Output the JSON first, then optionally the ===TRANSLATION=== section."""
+
+def build_followup_prompt(question, analysis, language_name):
+    serialized = json.dumps(analysis, ensure_ascii=False)
+    translated_rule = (
+        f'After the English answer, provide a polished {language_name} translation in "answer_translated".'
+        if language_name.lower() != "english"
+        else 'Set "answer_translated" to null because English is selected.'
+    )
+
+    return f"""You are continuing a patient-friendly conversation about a medical report.
+Use the prior structured evaluation as the source of truth.
+
+Rules:
+- First answer in English using clear, calm language.
+- {translated_rule}
+- If the patient name is known, use it naturally once.
+- Stay grounded in the report. Do not invent diagnoses.
+- End with up to 3 short suggested next questions when useful.
+- Return ONLY valid JSON:
+{{
+  "answer_english": "English answer",
+  "answer_translated": "Translated answer or null",
+  "translated_language": "{language_name}",
+  "suggested_questions": ["Question 1", "Question 2"]
+}}
+
+PRIOR EVALUATION JSON:
+{serialized}
+
+PATIENT QUESTION:
+{question}
+"""
 
 
 def call_llm(prompt):
-    """Call Groq API and return the response text."""
-    if not _groq_client:
+    client = get_groq_client()
+    if not client:
         raise ValueError("Groq API key not configured. Please set GROQ_API_KEY in .env file.")
 
-    response = _groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+    response = client.chat.completions.create(
+        model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
+        max_completion_tokens=8192,
+        response_format={"type": "json_object"},
     )
     return response.choices[0].message.content
 
 
-def parse_llm_response(response_text, language_code):
-    """Parse LLM response into structured data."""
-    translation = None
-
-    # Split on translation marker if present
-    if "===TRANSLATION===" in response_text:
-        parts = response_text.split("===TRANSLATION===", 1)
-        json_part = parts[0].strip()
-        translation = parts[1].strip()
-    else:
-        json_part = response_text.strip()
-
-    # Extract JSON from the response (handle markdown code blocks)
-    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", json_part)
+def parse_json_response(response_text):
+    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response_text)
     if json_match:
-        json_str = json_match.group(1)
-    else:
-        # Try to find raw JSON object
-        json_match = re.search(r"\{[\s\S]*\}", json_part)
-        if json_match:
-            json_str = json_match.group(0)
-        else:
-            raise ValueError("Could not extract JSON from LLM response.")
+        response_text = json_match.group(1)
 
-    data = json.loads(json_str)
-    data["translation"] = translation
-    data["language_code"] = language_code
-    return data
+    json_match = re.search(r"\{[\s\S]*\}", response_text.strip())
+    if not json_match:
+        raise ValueError("Could not extract JSON from LLM response.")
+    return json.loads(json_match.group(0))
 
-
-# ─────────────────────────────────────────────
-# ROUTES
-# ─────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -211,66 +276,53 @@ def get_languages():
 
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
-    """Upload a file and extract raw text from it."""
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
     file = request.files["file"]
     if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
-
     if not allowed_file(file.filename):
         return jsonify({"error": f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
 
     try:
-        file_bytes = file.read()
-        filename = file.filename
-        extracted_text = extract_text(file_bytes, filename)
-
+        extracted_text = extract_text(file.read(), file.filename)
         if not extracted_text or len(extracted_text.strip()) < 10:
             return jsonify({"error": "Could not extract meaningful text from the file. Please ensure the file contains readable text."}), 422
-
         return jsonify({
             "success": True,
-            "filename": filename,
+            "filename": file.filename,
             "text": extracted_text,
             "char_count": len(extracted_text),
             "word_count": len(extracted_text.split()),
         })
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/explain", methods=["POST"])
 def explain_report():
-    """Send extracted text to LLM and return simplified explanation."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No JSON body provided"}), 400
-
-    medical_text = data.get("text", "").strip()
+    data = request.get_json() or {}
+    medical_text = (data.get("text") or "").strip()
     language_code = data.get("language_code", "en")
     language_name = data.get("language_name", "English")
 
     if not medical_text:
         return jsonify({"error": "No medical text provided"}), 400
-
     if len(medical_text) < 10:
         return jsonify({"error": "Text too short to analyze"}), 400
 
-    # Truncate to ~4000 words to stay within token limits
     words = medical_text.split()
-    if len(words) > 4000:
-        medical_text = " ".join(words[:4000]) + "\n[... report truncated for analysis ...]"
+    if len(words) > 12000:
+        medical_text = " ".join(words[:12000]) + "\n[... report truncated for analysis due to length ...]"
 
     try:
-        prompt = build_analysis_prompt(medical_text, language_name, language_code)
-        response_text = call_llm(prompt)
-        result = parse_llm_response(response_text, language_code)
+        result = parse_json_response(call_llm(build_analysis_prompt(medical_text, language_name, language_code)))
+        result["language_code"] = language_code
+        result["language_name"] = language_name
+        result["model"] = LLM_MODEL
         result["success"] = True
         return jsonify(result)
-
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except json.JSONDecodeError as e:
@@ -279,15 +331,37 @@ def explain_report():
         return jsonify({"error": f"Analysis failed: {str(e)}"}), 500
 
 
+@app.route("/api/follow-up", methods=["POST"])
+def follow_up():
+    data = request.get_json() or {}
+    question = (data.get("question") or "").strip()
+    analysis = data.get("analysis")
+    language_name = data.get("language_name", "English")
+
+    if not question:
+        return jsonify({"error": "No follow-up question provided"}), 400
+    if not analysis:
+        return jsonify({"error": "No analysis context provided"}), 400
+
+    try:
+        result = parse_json_response(call_llm(build_followup_prompt(question, analysis, language_name)))
+        result["success"] = True
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"Failed to parse AI response: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Follow-up failed: {str(e)}"}), 500
+
+
 @app.route("/api/explain-text", methods=["POST"])
 def explain_text_direct():
-    """Directly analyze pasted text (no file upload needed)."""
     return explain_report()
 
 
 @app.route("/api/status", methods=["GET"])
 def status():
-    """Health check and API key status."""
     key_configured = bool(GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here")
     return jsonify({
         "status": "running",
@@ -295,19 +369,21 @@ def status():
         "provider_name": LLM_PROVIDER,
         "api_key_env_var": "GROQ_API_KEY",
         "api_key_placeholder": "your_groq_api_key_here",
-        "version": "1.0.0"
+        "model": LLM_MODEL,
+        "version": "2.1.0",
     })
 
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  Medical Report Translator")
+    print("  MedClear")
     print("=" * 60)
     if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
         print("  WARNING: GROQ_API_KEY not set in .env file")
         print("  Set your key in .env before using the analysis feature")
     else:
         print(f"  OK: {LLM_PROVIDER} API key loaded")
+        print(f"  MODEL: {LLM_MODEL}")
     print("  Open: http://127.0.0.1:5000")
     print("=" * 60)
     app.run(debug=True, host="0.0.0.0", port=5000)
