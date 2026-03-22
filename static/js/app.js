@@ -3,7 +3,6 @@ let currentTab = 'file';
 let analysisResult = null;
 let providerName = 'Groq';
 let providerEnvVar = 'GROQ_API_KEY';
-let currentModel = '—';
 
 const severityMap = {
   normal: ['severity-normal', 'Normal'],
@@ -35,7 +34,6 @@ async function checkApiStatus() {
     const data = await res.json();
     providerName = data.provider_name || providerName;
     providerEnvVar = data.api_key_env_var || providerEnvVar;
-    currentModel = data.model || currentModel;
     updateProviderCopy(data);
 
     if (data.api_key_configured) {
@@ -55,11 +53,9 @@ async function checkApiStatus() {
 function updateProviderCopy(status = {}) {
   providerName = status.provider_name || providerName;
   providerEnvVar = status.api_key_env_var || providerEnvVar;
-  currentModel = status.model || currentModel;
   document.getElementById('providerName').textContent = providerName;
   document.getElementById('providerAlertName').textContent = providerName;
   document.getElementById('providerEnvVar').textContent = providerEnvVar;
-  document.getElementById('modelName').textContent = currentModel;
 }
 
 function showApiAlert() {
@@ -212,7 +208,6 @@ function renderResults(data) {
   document.getElementById('assessmentText').textContent = data.overall_assessment || '—';
   document.getElementById('summaryText').textContent = data.summary || '—';
   document.getElementById('disclaimerText').textContent = data.disclaimer || '';
-  document.getElementById('modelName').textContent = data.model || currentModel;
 
   const [severityClass, severityLabel] = severityMap[(data.severity || '').toLowerCase()] || ['severity-na', data.severity || 'N/A'];
   const severityBadge = document.getElementById('severityBadge');
@@ -243,6 +238,12 @@ function renderReportType(reportType) {
   const showRx = ['prescription', 'combined_report', 'general_report'].includes(reportType);
   document.getElementById('labInterface').style.display = showLab ? 'block' : 'none';
   document.getElementById('prescriptionInterface').style.display = showRx ? 'block' : 'none';
+
+  const layout = document.getElementById('resultLayout');
+  layout.classList.remove('layout-lab-only', 'layout-rx-only', 'layout-both');
+  if (showLab && showRx) layout.classList.add('layout-both');
+  else if (showLab) layout.classList.add('layout-lab-only');
+  else layout.classList.add('layout-rx-only');
 }
 
 function renderPatientCard(patient) {
@@ -259,7 +260,7 @@ function renderPatientCard(patient) {
   rows.forEach(([label, value]) => {
     const card = document.createElement('div');
     card.className = 'patient-metric';
-    card.innerHTML = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
+    card.innerHTML = `<span class="patient-label">${escapeHtml(label)}</span><strong class="patient-value">&mdash; ${escapeHtml(value)}</strong>`;
     grid.appendChild(card);
   });
   document.getElementById('patientCard').style.display = rows.length ? 'block' : 'none';
@@ -548,6 +549,7 @@ function statusClass(status) {
   if (key.includes('critical')) return 'status-critical';
   if (key.includes('high')) return 'status-high';
   if (key.includes('low')) return 'status-low';
+  if (key.includes('deficient')) return 'status-deficient';
   if (key.includes('abnormal') || key.includes('follow')) return 'status-abnormal';
   if (key.includes('borderline')) return 'status-borderline';
   if (key.includes('normal')) return 'status-normal';

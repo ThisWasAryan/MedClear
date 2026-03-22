@@ -29,14 +29,9 @@
     <main class="app-grid">
       <section class="hero-panel glass-panel">
         <div class="hero-copy">
-          <p class="eyebrow">Trusted review workflow</p>
-          <h2>Understand lab reports and prescriptions with a cleaner, more clinical experience.</h2>
-          <p class="hero-text">Upload a report once and review structured findings, medication guidance, lifestyle recommendations, translated output, and bilingual follow-up answers in one place.</p>
-        </div>
-        <div class="hero-metrics">
-          <div><strong>Lab</strong><span>all detected tests</span></div>
-          <div><strong>Rx</strong><span>medication-specific review</span></div>
-          <div><strong>PDF</strong><span>download with translation</span></div>
+          <p class="eyebrow">Structured patient-friendly review</p>
+          <h2>Review lab reports and prescriptions in a clean clinical workspace.</h2>
+          <p class="hero-text">Upload the report once to review the overall picture, important findings, medication guidance, translated output, and follow-up answers in one organized flow.</p>
         </div>
       </section>
 
@@ -112,22 +107,20 @@
         </article>
 
         <article class="report-mode-panel glass-panel" id="reportModePanel">
-          <div class="mode-card" id="modeOverviewCard">
-            <span class="mode-label">Report mode</span>
+          <span class="mode-label">Report mode</span>
+          <div class="report-mode-copy">
             <strong id="reportModeTitle">General medical review</strong>
             <p id="reportModeDescription">The interface adapts to lab reports, prescriptions, or combined documents.</p>
           </div>
-          <div class="mode-card compact" id="modelInfoCard">
-            <span class="mode-label">Model</span>
-            <strong id="modelName">—</strong>
-          </div>
         </article>
 
-        <article class="result-layout glass-panel">
+        <article class="result-layout glass-panel" id="resultLayout">
           <section class="result-column result-column-wide" id="labInterface">
             <div class="section-heading-row">
-              <h4>Lab review</h4>
-              <span class="section-note">All detected tests</span>
+              <div>
+                <h4>Lab review</h4>
+                <span class="section-note">Values, ranges, and status</span>
+              </div>
             </div>
             <div class="lab-table-wrap">
               <table class="lab-table">
@@ -147,8 +140,10 @@
 
           <section class="result-column" id="prescriptionInterface">
             <div class="section-heading-row">
-              <h4>Prescription review</h4>
-              <span class="section-note">Medication-specific guidance</span>
+              <div>
+                <h4>Prescription review</h4>
+                <span class="section-note">Medication details and patient notes</span>
+              </div>
             </div>
             <div class="stack-list" id="medicationsList"></div>
           </section>
@@ -171,11 +166,11 @@
           <div class="summary-grid">
             <section>
               <div class="section-heading-row"><h4>Summary</h4></div>
-              <p id="summaryText"></p>
+              <div id="summaryText" class="large-body"></div>
             </section>
             <section id="translationBlock" style="display:none">
               <div class="section-heading-row"><h4 id="translationTitle">Translated report</h4></div>
-              <div id="translationText" class="translated-content"></div>
+              <div id="translationText" class="translated-content large-body"></div>
             </section>
           </div>
           <section>
@@ -198,11 +193,11 @@
           <div class="followup-response" id="followupResponse" style="display:none">
             <section>
               <div class="section-heading-row"><h4>Answer in English</h4></div>
-              <p id="followupAnswerEnglish"></p>
+              <div id="followupAnswerEnglish" class="large-body"></div>
             </section>
             <section id="followupTranslationSection" style="display:none">
               <div class="section-heading-row"><h4 id="followupTranslationTitle">Translated answer</h4></div>
-              <p id="followupAnswerTranslated"></p>
+              <div id="followupAnswerTranslated" class="large-body"></div>
             </section>
             <section>
               <div class="section-heading-row"><h4>Suggested follow-up questions</h4></div>
