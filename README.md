@@ -1,6 +1,7 @@
 # MedClear
 
-MedClear is a Flask web application that helps users review **lab reports, prescriptions, and mixed medical documents** in a cleaner, patient-friendly format. It can extract text from PDFs and images, structure the report with a Groq-hosted LLM, translate the output into the selected language, answer follow-up questions, and export the evaluation as a PDF.
+MedClear is a Flask-based web application designed to simplify the understanding of **lab reports, prescriptions, and combined medical documents**. It extracts text from PDFs and images, organizes the content using a Groq-powered language model, translates the results into the user’s preferred language, supports follow-up queries, and allows the final analysis to be exported as a PDF.
+
 
 > **Medical disclaimer:** MedClear is for education and readability only. It does **not** replace a licensed doctor, pharmacist, radiologist, or emergency service.
 
