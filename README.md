@@ -316,24 +316,6 @@ Answers a follow-up question grounded in the existing structured analysis.
 
 ---
 
-## Security notes
-
-Please keep these in mind:
-
-- Never hardcode your Groq API key in frontend code.
-- Never commit your real `.env` file to version control.
-- Treat uploaded medical files as sensitive health-related data.
-- If deploying publicly, add:
-  - proper authentication
-  - rate limiting
-  - secure logging rules
-  - data retention/deletion rules
-  - HTTPS
-  - server-side secret management
-- Review where OCR text, prompts, and logs are stored before using this in production.
-
----
-
 ## Current limitations
 
 MedClear works well for many simple and medium-complexity reports, but there are still important limitations:
@@ -391,7 +373,7 @@ If a report appears urgent, critical, or alarming, the user should contact a qua
 
 ## Summary
 
-MedClear is now a Groq-powered, structured medical-report review tool with:
+MedClear is a Groq-powered, structured medical-report review tool with:
 
 - PDF/image/text intake
 - OCR and PDF extraction
@@ -402,8 +384,3 @@ MedClear is now a Groq-powered, structured medical-report review tool with:
 - dark/light theme support
 - a cleaner clinical UI
 
-If you clone the repo, the most important setup step after installing dependencies is:
-
-1. get your Groq API key from `https://console.groq.com/keys`
-2. paste it into the project-root `.env` file under `GROQ_API_KEY=`
-3. then run the app
