@@ -9,7 +9,7 @@ MedClear is a Flask-based web application designed to simplify the understanding
 
 ## What MedClear does
 
-MedClear currently supports:
+It currently supports:
 
 - Uploading or pasting medical report text.
 - Extracting text from:
